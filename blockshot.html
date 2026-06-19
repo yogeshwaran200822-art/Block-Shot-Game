@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>BLOCK SHOT</title>
+
+<style>
+body{
+margin:0;
+background:#111;
+overflow:hidden;
+font-family:Arial,sans-serif;
+text-align:center;
+}
+
+canvas{
+display:none;
+margin:auto;
+background:#3a5f3a;
+border:4px solid white;
+box-shadow:0 0 20px white;
+}
+
+#menu,#gameOver{
+position:absolute;
+top:50%;
+left:50%;
+transform:translate(-50%,-50%);
+color:white;
+}
+
+h1{
+font-size:70px;
+color:red;
+text-shadow:0 0 20px white;
+margin:20px;
+}
+
+button{
+padding:15px 40px;
+font-size:24px;
+font-weight:bold;
+border:none;
+border-radius:12px;
+cursor:pointer;
+background:linear-gradient(45deg,#ff9900,#ff3300);
+color:white;
+margin:10px;
+transition:0.3s;
+}
+
+button:hover{
+transform:scale(1.1);
+}
+
+#congrats{
+font-size:32px;
+color:#00ff00;
+animation:flash 0.8s infinite;
+}
+
+@keyframes flash{
+0%{opacity:1;}
+50%{opacity:.2;}
+100%{opacity:1;}
+}
+</style>
+</head>
+
+<body>
+
+<div id="menu">
+<h1>BLOCK SHOT</h1>
+<button id="startBtn">▶ START GAME</button>
+</div>
+
+<div id="gameOver" style="display:none;">
+<h1>GAME OVER</h1>
+
+<p id="finalScore"></p>
+<p id="bestScoreText"></p>
+
+<h2 id="congrats"></h2>
+
+<button onclick="restartGame()">🔄 Restart</button>
+<button onclick="quitGame()">❌ Quit</button>
+</div>
+
+<canvas id="game" width="900" height="600"></canvas>
+
+<script>
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+let gameStarted = false;
+let score = 0;
+let bestScore = Number(localStorage.getItem("bestScore")) || 0;
+
+const keys = {};
+const bullets = [];
+const enemies = [];
+
+const player = {
+x:450,
+y:300,
+size:30,
+speed:5,
+hp:100
+};
+
+/* AUDIO */
+
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function beep(freq,duration,type="square",volume=0.05){
+const osc = audioCtx.createOscillator();
+const gain = audioCtx.createGain();
+
+osc.type = type;
+osc.frequency.value = freq;
+
+gain.gain.value = volume;
+
+osc.connect(gain);
+gain.connect(audioCtx.destination);
+
+osc.start();
+
+setTimeout(()=>{
+osc.stop();
+},duration);
+}
+
+function shootSound(){
+beep(700,80,"square",0.08);
+}
+
+function deadSound(){
+beep(200,300,"sawtooth",0.12);
+setTimeout(()=>beep(120,400,"sawtooth",0.1),150);
+}
+
+let stepTimer = 0;
+
+document.getElementById("startBtn").onclick = ()=>{
+
+audioCtx.resume();
+
+document.getElementById("menu").style.display="none";
+canvas.style.display="block";
+
+gameStarted = true;
+};
+
+/* CONTROLS */
+
+document.addEventListener("keydown",e=>{
+
+keys[e.key.toLowerCase()] = true;
+
+if(e.code==="Space" && gameStarted){
+
+shootSound();
+
+bullets.push({
+x:player.x + player.size/2,
+y:player.y,
+dy:-10
+});
+}
+});
+
+document.addEventListener("keyup",e=>{
+keys[e.key.toLowerCase()] = false;
+});
+
+/* ENEMIES */
+
+function spawnEnemy(){
+
+if(!gameStarted) return;
+
+enemies.push({
+x:Math.random()*(canvas.width-30),
+y:-40,
+size:25,
+speed:2
+});
+}
+
+setInterval(spawnEnemy,1000);
+
+/* UPDATE */
+
+function update(){
+
+let moving = false;
+
+if(keys["w"]){player.y-=player.speed;moving=true;}
+if(keys["s"]){player.y+=player.speed;moving=true;}
+if(keys["a"]){player.x-=player.speed;moving=true;}
+if(keys["d"]){player.x+=player.speed;moving=true;}
+
+if(moving){
+
+stepTimer++;
+
+if(stepTimer>15){
+beep(150,30,"triangle",0.03);
+stepTimer=0;
+}
+}
+
+player.x=Math.max(0,Math.min(canvas.width-player.size,player.x));
+player.y=Math.max(0,Math.min(canvas.height-player.size,player.y));
+
+for(let i=bullets.length-1;i>=0;i--){
+
+bullets[i].y += bullets[i].dy;
+
+if(bullets[i].y<0){
+bullets.splice(i,1);
+}
+}
+
+for(let i=enemies.length-1;i>=0;i--){
+
+let e = enemies[i];
+
+let dx = player.x-e.x;
+let dy = player.y-e.y;
+
+let dist = Math.sqrt(dx*dx+dy*dy);
+
+e.x += dx/dist*e.speed;
+e.y += dy/dist*e.speed;
+
+if(dist<25){
+player.hp -= 1;
+}
+
+for(let j=bullets.length-1;j>=0;j--){
+
+let b = bullets[j];
+
+if(
+b.x < e.x+e.size &&
+b.x+5 > e.x &&
+b.y < e.y+e.size &&
+b.y+10 > e.y
+){
+enemies.splice(i,1);
+bullets.splice(j,1);
+score++;
+break;
+}
+}
+}
+
+if(player.hp<=0){
+
+deadSound();
+
+gameStarted=false;
+
+if(score>bestScore){
+
+bestScore=score;
+localStorage.setItem("bestScore",bestScore);
+
+document.getElementById("congrats").innerHTML=
+"🎉 CONGRATULATIONS! NEW HIGH SCORE! 🎉";
+
+}else{
+document.getElementById("congrats").innerHTML="";
+}
+
+document.getElementById("finalScore").innerHTML=
+"<h2>Current Score: "+score+"</h2>";
+
+document.getElementById("bestScoreText").innerHTML=
+"<h2>Best Score: "+bestScore+"</h2>";
+
+canvas.style.display="none";
+document.getElementById("gameOver").style.display="block";
+}
+}
+
+/* DRAW */
+
+function draw(){
+
+ctx.clearRect(0,0,canvas.width,canvas.height);
+
+ctx.fillStyle="blue";
+ctx.fillRect(player.x,player.y,player.size,player.size);
+
+ctx.fillStyle="yellow";
+
+bullets.forEach(b=>{
+ctx.fillRect(b.x,b.y,5,10);
+});
+
+ctx.fillStyle="red";
+
+enemies.forEach(e=>{
+ctx.fillRect(e.x,e.y,e.size,e.size);
+});
+
+ctx.fillStyle="white";
+ctx.font="24px Arial";
+
+ctx.fillText("BLOCK SHOT",350,30);
+ctx.fillText("HP: "+player.hp,10,30);
+ctx.fillText("Score: "+score,10,60);
+ctx.fillText("Best: "+bestScore,10,90);
+}
+
+/* BUTTONS */
+
+function restartGame(){
+location.reload();
+}
+
+function quitGame(){
+
+gameStarted=false;
+
+document.body.innerHTML=`
+<div style="color:white;margin-top:200px;">
+<h1>Thanks For Playing</h1>
+<h2>BLOCK SHOT</h2>
+</div>
+`;
+}
+
+/* LOOP */
+
+function gameLoop(){
+
+if(gameStarted){
+update();
+draw();
+}
+
+requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+
+</script>
+
+</body>
+</html>
